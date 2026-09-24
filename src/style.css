@@ -97,7 +97,8 @@ body,
     display: none;
   }
 }
-.galaxy-panel {
+.galaxy-panel,
+.sim-panel {
   position: absolute;
   left: 50%;
   bottom: 12px;
@@ -112,18 +113,21 @@ body,
   display: grid;
   gap: 8px;
 }
-.galaxy-desc {
+.galaxy-desc,
+.sim-desc {
   margin: 0;
   color: var(--muted);
   line-height: 1.5;
 }
-.galaxy-row {
+.galaxy-row,
+.sim-row {
   display: flex;
   flex-wrap: wrap;
   gap: 6px 12px;
   align-items: center;
 }
-.galaxy-row button {
+.galaxy-row button,
+.sim-row button {
   font: inherit;
   color: var(--fg);
   background: #161b2a;
@@ -132,7 +136,8 @@ body,
   padding: 6px 14px;
   cursor: pointer;
 }
-.galaxy-row button.on {
+.galaxy-row button.on,
+.sim-row button.on {
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -145,7 +150,8 @@ body,
   padding: 3px 6px;
   margin-left: 4px;
 }
-.galaxy-row label {
+.galaxy-row label,
+.sim-row label {
   color: var(--muted);
   display: inline-flex;
   align-items: center;

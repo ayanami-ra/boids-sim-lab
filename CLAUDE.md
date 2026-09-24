@@ -37,6 +37,9 @@
   - `gpu-nbody.ts` — GPU バッファとパイプライン、エネルギーの読み出し
   - URL クエリ: `scenario`, `n`, `dm=1`, `cpu=1`, `substeps`（固定するとステップ数が決定的になる）,
     `yaw` / `pitch` / `dist`（カメラ、度と kpc）, `rotate=0`（自動回転を止める）
+- `src/sims/forest/` — 森の成長。`colonization.ts` が空間コロニー化アルゴリズム（DOM に依存しない）
+- `src/sims/lightning/` — 雷。`dbm.ts` が絶縁破壊モデル（ラプラス方程式の SOR 解法と放電路の成長）
+- `src/core/panel.ts` — 画面下の操作パネル（言語切り替えで自動的に描き直す）。新しいシミュレーションはこれを使う
 - `tests/` — Vitest。物理や数値計算のコアは DOM に依存しない関数に切り出してテストする
 
 ## シミュレーションを書くときの約束
