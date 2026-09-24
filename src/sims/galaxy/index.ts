@@ -23,8 +23,8 @@ export const galaxy: SimDefinition = {
   id: 'galaxy',
   title: { ja: '銀河衝突', en: 'Galaxy Collision' },
   description: {
-    ja: '2 つの渦巻銀河の衝突を、星とダークマター全粒子の重力を直接計算する N 体シミュレーションで再現。',
-    en: 'Two spiral galaxies collide in an N-body simulation that computes the gravity between every star and dark matter particle directly.',
+    ja: '2〜4 つの渦巻銀河の衝突と合体を、星とダークマター全粒子の重力を直接計算する N 体シミュレーションで再現。',
+    en: 'Two to four spiral galaxies collide and merge in an N-body simulation that computes the gravity between every star and dark matter particle directly.',
   },
   dt: 1 / 60,
   async create({ canvas, width, height, dpr, rng, params }) {
