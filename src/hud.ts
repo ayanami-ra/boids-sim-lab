@@ -16,10 +16,10 @@ export function mountHud(root: HTMLElement, runner: RunnerHandle): () => void {
       fps = (frames * 1000) / (now - lastSample);
       frames = 0;
       lastSample = now;
-      const extra = Object.entries(runner.instance.stats?.() ?? {})
-        .map(([k, v]) => `${k} ${v}`)
-        .join(' · ');
-      el.textContent = `${fps.toFixed(0)} fps${runner.paused ? ' · 停止中' : ''}${extra ? ` · ${extra}` : ''}`;
+      const lines = Object.entries(runner.instance.stats?.() ?? {}).map(([k, v]) => `${k} ${v}`);
+      el.textContent = [`${fps.toFixed(0)} fps${runner.paused ? ' · 停止中' : ''}`, ...lines].join(
+        '\n',
+      );
     }
     raf = requestAnimationFrame(update);
   };
