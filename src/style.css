@@ -87,3 +87,72 @@ body,
   bottom: 12px;
   left: 12px;
 }
+.hud {
+  white-space: pre;
+  text-align: right;
+  line-height: 1.5;
+}
+@media (max-width: 720px), (pointer: coarse) {
+  .help {
+    display: none;
+  }
+}
+.galaxy-panel {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  width: min(560px, calc(100% - 24px));
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  border-radius: 12px;
+  background: rgb(6 8 16 / 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-size: 13px;
+  display: grid;
+  gap: 8px;
+}
+.galaxy-desc {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.galaxy-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+}
+.galaxy-row button {
+  font: inherit;
+  color: var(--fg);
+  background: #161b2a;
+  border: 1px solid #2a3350;
+  border-radius: 999px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+.galaxy-row button.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.galaxy-row select {
+  font: inherit;
+  color: var(--fg);
+  background: #161b2a;
+  border: 1px solid #2a3350;
+  border-radius: 6px;
+  padding: 3px 6px;
+  margin-left: 4px;
+}
+.galaxy-row label {
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.galaxy-mode {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+}

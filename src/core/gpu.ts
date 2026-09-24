@@ -2,6 +2,7 @@
  * WebGPU の初期化。非対応環境では null を返すので、呼び出し側で Canvas2D 等にフォールバックする。
  */
 export interface GpuContext {
+  adapter: GPUAdapter;
   device: GPUDevice;
   context: GPUCanvasContext;
   format: GPUTextureFormat;
@@ -17,5 +18,7 @@ export async function initWebGPU(canvas: HTMLCanvasElement): Promise<GpuContext 
   const format = navigator.gpu.getPreferredCanvasFormat();
   context.configure({ device, format, alphaMode: 'premultiplied' });
   device.lost.then((info) => console.warn('WebGPU device lost:', info.message));
-  return { device, context, format };
+  // 注意: ここで requestAdapter() を再度呼ぶと、Chrome ではこの device が失われることがある。
+  // アダプタの情報が必要なら返り値の adapter を使う。
+  return { adapter, device, context, format };
 }

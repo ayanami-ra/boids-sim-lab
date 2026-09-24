@@ -14,9 +14,17 @@ const executablePath =
 
 const browser = await chromium.launch({
   executablePath,
-  args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=swiftshader'],
+  // ヘッドレスで WebGPU の canvas 出力を動かすには Vulkan を SwiftShader に向ける必要がある
+  args: [
+    '--enable-unsafe-webgpu',
+    '--enable-features=Vulkan',
+    '--use-vulkan=swiftshader',
+    '--use-angle=swiftshader',
+  ],
 });
-const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+// SHOT_VIEWPORT=390x844 のようにしてスマホの画面も確かめられる
+const [vw, vh] = (process.env.SHOT_VIEWPORT ?? '1280x800').split('x').map(Number);
+const page = await browser.newPage({ viewport: { width: vw, height: vh } });
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => m.type() === 'error' && errors.push(`${m.text()} (${m.location().url})`));
@@ -24,15 +32,22 @@ page.on('console', (m) => m.type() === 'error' && errors.push(`${m.text()} (${m.
 const params = new URLSearchParams(query);
 params.set('paused', '1');
 await page.goto(`${base}?${params}#/${id}`);
-await page.waitForFunction(() => window.__sim !== undefined, null, { timeout: 15000 });
-await page.evaluate((n) => window.__sim.step(n), Number(steps));
+await page.waitForFunction(() => window.__sim !== undefined, null, { timeout: 60000 });
+await page.evaluate(async (n) => {
+  window.__sim.step(n);
+  // GPU を使うシミュレーションは計算が終わるのを待つ
+  await window.__sim.instance.gpu?.readPositions();
+}, Number(steps));
+await page.waitForTimeout(1500);
 
 await mkdir('shots', { recursive: true });
-const path = `shots/${id}.png`;
-await page.locator('canvas').screenshot({ path });
-await browser.close();
+const path = `shots/${process.env.SHOT_NAME ?? id}.png`;
+await page.screenshot({ path });
 
+const stats = await page.evaluate(() => window.__sim.instance.stats?.());
+await browser.close();
 console.log(`saved ${path}`);
+if (stats) console.log(JSON.stringify(stats));
 if (errors.length) {
   console.error('ページでエラーが出ました:\n' + errors.join('\n'));
   process.exit(1);
