@@ -1,95 +1,164 @@
 import { describe, expect, it } from 'vitest';
 import { createRng } from '../src/core/rng';
-import { DEFAULT_PARAMS, Forest } from '../src/sims/forest/colonization';
+import {
+  SPECIES,
+  Stand,
+  crownRadius,
+  diameterGrowth,
+  height,
+  type SpeciesId,
+} from '../src/sims/forest/stand';
 
-function grownForest(seed: string, trees: number[], iterations = 200) {
-  const rng = createRng(seed);
-  const f = new Forest(800, 600, 560);
-  f.addAttractors(1200, rng);
-  trees.forEach((x, i) => f.plant(x, i * 40));
-  for (let i = 0; i < iterations; i++) f.grow();
-  return f;
+const index = (id: SpeciesId) => SPECIES.findIndex((s) => s.id === id);
+const sp = (id: SpeciesId) => SPECIES[index(id)]!;
+
+/** 胸高断面積の、先駆種（シラカバ・アカマツ）と後期種（ミズナラ・ブナ）の割合 */
+function shares(stand: Stand) {
+  const ba = stand.basalAreaBySpecies();
+  const total = ba.reduce((a, b) => a + b, 0) || 1;
+  return {
+    pioneer: (ba[index('birch')]! + ba[index('pine')]!) / total,
+    late: (ba[index('oak')]! + ba[index('beech')]!) / total,
+    total,
+  };
 }
 
-describe('空間コロニー化による成長', () => {
-  it('幹が伸びて樹冠に届き、枝分かれして光の粒を使い切っていく', () => {
-    const f = grownForest('one', [400]);
-    expect(f.n).toBeGreaterThan(200);
-    expect(f.attractors).toBeLessThan(1200 * 0.5);
-    // 枝分かれしている（子が 2 本以上の節がある）
-    expect(f.children.subarray(0, f.n).some((c) => c >= 2)).toBe(true);
-    // 幹の先端は地面より上
-    expect(f.y[f.trees[0]!.tip]).toBeLessThan(560 - 100);
-  });
-
-  it('すべての節は親から一定の長さで伸び、地面より下には行かない', () => {
-    const f = grownForest('shape', [300, 500]);
-    for (let i = 0; i < f.n; i++) {
-      expect(f.y[i]).toBeLessThanOrEqual(560);
-      const p = f.parent[i]!;
-      if (p < 0) continue;
-      expect(p).toBeLessThan(i);
-      expect(Math.hypot(f.x[i]! - f.x[p]!, f.y[i]! - f.y[p]!)).toBeCloseTo(
-        DEFAULT_PARAMS.segment,
-        0,
-      );
+describe('樹木の形', () => {
+  it('樹高と樹冠は太さとともに大きくなり、樹高は最大樹高を超えない', () => {
+    for (const s of SPECIES) {
+      let h = 0;
+      let r = 0;
+      for (let d = 0.5; d <= s.dMax; d += 0.5) {
+        expect(height(s, d)).toBeGreaterThan(h);
+        expect(crownRadius(s, d)).toBeGreaterThanOrEqual(r);
+        h = height(s, d);
+        r = crownRadius(s, d);
+      }
+      expect(h).toBeLessThanOrEqual(s.hMax);
+      expect(h).toBeGreaterThan(s.hMax * 0.85);
     }
   });
+});
 
-  it('パイプモデル: 親は子より太く、太さ^p は子の和に等しい', () => {
-    const f = grownForest('pipe', [400]);
-    const p = DEFAULT_PARAMS.pipeExponent;
-    const sum = new Float64Array(f.n);
-    for (let i = 1; i < f.n; i++) {
-      const parent = f.parent[i]!;
-      expect(f.radius[parent]!).toBeGreaterThanOrEqual(f.radius[i]! - 1e-6);
-      sum[parent]! += Math.pow(f.radius[i]!, p);
-    }
-    for (let i = 0; i < f.n; i++) {
-      if (f.children[i]! > 0) expect(Math.pow(f.radius[i]!, p)).toBeCloseTo(sum[i]!, 3);
-    }
+describe('成長の光への反応（耐陰性のトレードオフ）', () => {
+  it('明るい所ではシラカバがブナより速く、暗い所ではブナがシラカバより速く育つ', () => {
+    expect(diameterGrowth(sp('birch'), 5, 1)).toBeGreaterThan(diameterGrowth(sp('beech'), 5, 1));
+    expect(diameterGrowth(sp('beech'), 5, 0.05)).toBeGreaterThan(
+      diameterGrowth(sp('birch'), 5, 0.05),
+    );
   });
 
-  it('枝は自分の木の節からしか伸びない（木どうしは混ざらない）', () => {
-    const f = grownForest('trees', [200, 400, 600]);
-    for (let i = 0; i < f.n; i++) {
-      const p = f.parent[i]!;
-      if (p >= 0) expect(f.tree[i]).toBe(f.tree[p]);
+  it('どの種も光が多いほど速く育つ', () => {
+    for (const s of SPECIES) {
+      expect(diameterGrowth(s, 10, 0.8)).toBeGreaterThan(diameterGrowth(s, 10, 0.3));
     }
-    const perTree = [0, 0, 0];
-    for (let i = 0; i < f.n; i++) perTree[f.tree[i]!]!++;
-    for (const c of perTree) expect(c).toBeGreaterThan(30);
+  });
+});
+
+describe('光の計算', () => {
+  it('樹冠の真下は葉の量に応じて暗くなり、樹冠の外は明るいまま', () => {
+    const stand = new Stand(createRng('light'));
+    stand.addTree(index('beech'), 50, 15, 60);
+    stand.computeLight();
+    expect(stand.lightAt(50, 15)).toBeCloseTo(Math.exp(-0.5 * sp('beech').lai), 3);
+    expect(stand.lightAt(5, 5)).toBe(1);
   });
 
-  it('隣に木があると光を奪い合い、1 本だけのときより枝が少ない', () => {
-    const alone = grownForest('compete', [400]);
-    const crowded = grownForest('compete', [400, 330, 470]);
-    const branchesOf = (f: Forest, t: number) => {
-      let c = 0;
-      for (let i = 0; i < f.n; i++) if (f.tree[i] === t) c++;
-      return c;
-    };
-    expect(branchesOf(crowded, 0)).toBeLessThan(branchesOf(alone, 0) * 0.8);
+  it('背の低い木は、上に高い木があると暗い。高い木は全天の光を受ける', () => {
+    const stand = new Stand(createRng('layers'));
+    const tall = stand.addTree(index('oak'), 50, 15, 70);
+    const small = stand.addTree(index('beech'), 51, 15, 5);
+    stand.computeLight();
+    expect(tall.light).toBe(1);
+    expect(small.light).toBeLessThan(0.2);
   });
 
-  it('同じ場所に節が重なって生えない（光の粒の引っ張り合いで同じ枝を生やし続けない）', () => {
-    const f = grownForest('dup', [250, 400, 550], 400);
-    const min = DEFAULT_PARAMS.segment * 0.3;
-    let duplicates = 0;
-    for (let i = 0; i < f.n; i++) {
-      for (let j = i + 1; j < f.n; j++) {
-        if (Math.abs(f.x[i]! - f.x[j]!) < min && Math.abs(f.y[i]! - f.y[j]!) < min) duplicates++;
+  it('葉の量が少ないシラカバの下は、ブナの下より明るい', () => {
+    const stand = new Stand(createRng('lai'));
+    stand.addTree(index('birch'), 20, 15, 30);
+    stand.addTree(index('beech'), 80, 15, 30);
+    stand.computeLight();
+    expect(stand.lightAt(20, 15)).toBeGreaterThan(stand.lightAt(80, 15) * 3);
+  });
+});
+
+describe('遷移（裸地から森へ）', () => {
+  for (const seed of ['s1', 's2', 's3']) {
+    it(`[${seed}] 初めは先駆種が、数百年後は耐陰性の強い種が森の大部分を占める`, () => {
+      const stand = new Stand(createRng(seed));
+      for (let y = 0; y < 50; y++) stand.step();
+      expect(shares(stand).pioneer).toBeGreaterThan(0.6);
+      for (let y = 50; y < 350; y++) stand.step();
+      const late = shares(stand);
+      expect(late.late).toBeGreaterThan(0.75);
+      // 成熟した温帯林らしい量（胸高断面積 20〜60 m²/ha）
+      expect(late.total).toBeGreaterThan(20);
+      expect(late.total).toBeLessThan(60);
+      // 閉じた森の林床は暗い
+      const floor = stand.floorLight.reduce((a, b) => a + b, 0) / stand.floorLight.length;
+      expect(floor).toBeLessThan(0.2);
+    }, 30000);
+  }
+
+  it('寿命を大きく超えて生きる木はいない', () => {
+    const stand = new Stand(createRng('age'));
+    for (let y = 0; y < 300; y++) stand.step();
+    for (const t of stand.trees) expect(t.age).toBeLessThan(SPECIES[t.species]!.maxAge * 1.5);
+  }, 30000);
+});
+
+describe('攪乱', () => {
+  function matureStand(seed: string) {
+    const stand = new Stand(createRng(seed));
+    for (let y = 0; y < 150; y++) stand.step();
+    return stand;
+  }
+
+  it('台風では背の高い木ほど倒れ、倒れたところの林床が明るくなる', () => {
+    const stand = matureStand('wind');
+    const before = stand.floorLight.reduce((a, b) => a + b, 0);
+    const tallBefore = stand.trees.filter((t) => height(SPECIES[t.species]!, t.d) > 20).length;
+    const smallBefore = stand.trees.filter((t) => height(SPECIES[t.species]!, t.d) < 8).length;
+    stand.typhoon();
+    const tallAfter = stand.trees.filter((t) => height(SPECIES[t.species]!, t.d) > 20).length;
+    const smallAfter = stand.trees.filter((t) => height(SPECIES[t.species]!, t.d) < 8).length;
+    expect(tallAfter).toBeLessThan(tallBefore);
+    expect(smallAfter).toBe(smallBefore);
+    expect(stand.floorLight.reduce((a, b) => a + b, 0)).toBeGreaterThan(before);
+    expect(stand.snags.some((s) => s.fallen)).toBe(true);
+  });
+
+  it('山火事のあと、生き残る大径木はアカマツが多い', () => {
+    const survived: Record<string, [number, number]> = {};
+    for (const seed of ['f1', 'f2', 'f3', 'f4']) {
+      const stand = matureStand(seed);
+      const big = stand.trees.filter((t) => t.d > 20);
+      stand.fire();
+      for (const s of SPECIES) {
+        const b = big.filter((t) => t.species === index(s.id)).length;
+        const a = stand.trees.filter((t) => t.d > 20 && t.species === index(s.id)).length;
+        const prev = survived[s.id] ?? [0, 0];
+        survived[s.id] = [prev[0] + a, prev[1] + b];
       }
     }
-    expect(duplicates).toBe(0);
-    // 太さも暴走しない（根元でも幹として常識的な太さ）
-    for (const tree of f.trees) expect(f.radius[tree.root]).toBeLessThan(12);
+    const rate = (id: SpeciesId) => survived[id]![0] / Math.max(1, survived[id]![1]);
+    expect(rate('pine')).toBeGreaterThan(rate('beech'));
+    expect(rate('pine')).toBeGreaterThan(0.5);
+  }, 30000);
+
+  it('山火事で若い木はすべて焼ける', () => {
+    const stand = matureStand('young');
+    stand.fire();
+    expect(stand.trees.every((t) => t.d > 8)).toBe(true);
   });
 
   it('同じシードなら同じ森になる', () => {
-    const a = grownForest('same', [300, 500], 80);
-    const b = grownForest('same', [300, 500], 80);
-    expect(a.n).toBe(b.n);
-    expect([...a.x.subarray(0, a.n)]).toEqual([...b.x.subarray(0, b.n)]);
+    const a = new Stand(createRng('same'));
+    const b = new Stand(createRng('same'));
+    for (let y = 0; y < 60; y++) {
+      a.step();
+      b.step();
+    }
+    expect(a.trees.map((t) => t.d)).toEqual(b.trees.map((t) => t.d));
   });
 });
