@@ -30,7 +30,8 @@
 - `src/sims/<id>/index.ts` — シミュレーション 1 本。`src/registry.ts` に登録するとギャラリーに出る
 - `src/sims/boids/` — 参照実装。新しいシミュレーションはこれを雛形にする
 - `src/sims/galaxy/` — 銀河衝突の N 体シミュレーション（WebGPU、非対応なら CPU + Canvas2D）
-  - `model.ts` — 初期条件（円盤・バルジ・ハローの分布、軌道、シナリオ）。単位系は G=1, kpc, 1e10 太陽質量
+  - `model.ts` — 初期条件（円盤・バルジ・ハローの分布、軌道、シナリオ）。単位系は G=1, kpc, 1e10 太陽質量。
+    1 シナリオの銀河は 2〜`MAX_GALAXIES`（4）個。2 個は放物線軌道（`pair`）、3〜4 個は収縮する銀河群（`group`）
   - `nbody-cpu.ts` — 直接総和とリープフロッグ積分の CPU 版。GPU 版と同じ式で、テストの基準
   - `shaders.ts` — WGSL（重力計算、描画、トーンマップ）
   - `gpu-nbody.ts` — GPU バッファとパイプライン、エネルギーの読み出し

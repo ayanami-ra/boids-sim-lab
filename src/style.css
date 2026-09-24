@@ -183,3 +183,8 @@ body,
   right: 16px;
   top: 16px;
 }
+.galaxy-count button {
+  padding: 4px 12px;
+  font-size: 12px;
+  background: transparent;
+}

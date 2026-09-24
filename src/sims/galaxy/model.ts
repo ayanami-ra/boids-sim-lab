@@ -321,18 +321,77 @@ export interface GalaxyPlacement {
   spec: GalaxySpec;
   inclination: number;
   argument: number;
+  /** 銀河群（group）の場合の初期位置（kpc）。重心は自動で原点に合わせる */
+  position?: [number, number, number];
 }
+
+/** 1 シナリオに登場できる銀河の最大数 */
+export const MAX_GALAXIES = 4;
+
+export type Orbit =
+  /** 2 つの銀河の放物線軌道（pericenter 0 なら正面衝突） */
+  | { type: 'pair'; pericenter: number; separation: number }
+  /**
+   * 3〜4 個の銀河群。各銀河を点質量とみなし、運動エネルギーを
+   * 位置エネルギーの virial 倍にそろえる（0.5 未満ならゆっくり収縮して合体に向かう）。
+   * spin は速度の向き: 1 なら z 軸まわりの回転、0 なら中心へまっすぐ落下
+   */
+  | { type: 'group'; virial: number; spin: number };
 
 export interface Scenario {
   id: string;
   title: Text;
   description: Text;
-  galaxies: [GalaxyPlacement, GalaxyPlacement];
-  pericenter: number;
-  separation: number;
+  galaxies: GalaxyPlacement[];
+  orbit: Orbit;
   /** カメラの初期の仰角（度） */
   cameraPitch: number;
   cameraDistance: number;
+}
+
+/**
+ * 銀河群の初期速度。masses と positions（重心は原点に移す）から、
+ * 全体の運動量を 0、運動エネルギーを |位置エネルギー| × virial にした位置と速度を返す。
+ */
+export function groupOrbits(
+  masses: readonly number[],
+  positions: readonly (readonly number[])[],
+  virial: number,
+  spin: number,
+): { pos: number[][]; vel: number[][] } {
+  const total = masses.reduce((a, b) => a + b, 0);
+  const com = [0, 1, 2].map(
+    (d) => masses.reduce((s, m, i) => s + m * positions[i]![d]!, 0) / total,
+  );
+  const pos = positions.map((p) => p.map((v, d) => v - com[d]!));
+
+  let potential = 0;
+  for (let i = 0; i < masses.length; i++) {
+    for (let j = i + 1; j < masses.length; j++) {
+      const r = Math.hypot(...pos[i]!.map((v, d) => v - pos[j]![d]!));
+      potential -= (masses[i]! * masses[j]!) / r;
+    }
+  }
+
+  // 向き: z 軸まわりの接線方向と中心向きを spin で混ぜる。大きさは √(M/r) に比例
+  let vel = pos.map((p) => {
+    const r = Math.hypot(...p) || 1;
+    const rxy = Math.hypot(p[0]!, p[1]!);
+    const tangent = rxy > 1e-6 ? [-p[1]! / rxy, p[0]! / rxy, 0] : [1, 0, 0];
+    const inward = p.map((v) => -v / r);
+    const dir = tangent.map((t, d) => spin * t + (1 - spin) * inward[d]!);
+    const len = Math.hypot(...dir) || 1;
+    const speed = Math.sqrt(total / r);
+    return dir.map((v) => (v / len) * speed);
+  });
+
+  // 全体の運動量を 0 にしてから、運動エネルギーを目標値に合わせる
+  const mean = [0, 1, 2].map((d) => masses.reduce((s, m, i) => s + m * vel[i]![d]!, 0) / total);
+  vel = vel.map((v) => v.map((x, d) => x - mean[d]!));
+  const kinetic = masses.reduce((s, m, i) => s + 0.5 * m * Math.hypot(...vel[i]!) ** 2, 0);
+  const scale = kinetic > 0 ? Math.sqrt((virial * -potential) / kinetic) : 0;
+  vel = vel.map((v) => v.map((x) => x * scale));
+  return { pos, vel };
 }
 
 const companion = (q: number, noDisk = false): GalaxySpec => {
@@ -354,8 +413,7 @@ export const SCENARIOS: Scenario[] = [
       { spec: MILKY_WAY_LIKE, inclination: 20, argument: 0 },
       { spec: MILKY_WAY_LIKE, inclination: 60, argument: 30 },
     ],
-    pericenter: 8,
-    separation: 70,
+    orbit: { type: 'pair', pericenter: 8, separation: 70 },
     cameraPitch: 55,
     cameraDistance: 130,
   },
@@ -370,8 +428,7 @@ export const SCENARIOS: Scenario[] = [
       { spec: MILKY_WAY_LIKE, inclination: 10, argument: 0 },
       { spec: MILKY_WAY_LIKE, inclination: 110, argument: 60 },
     ],
-    pericenter: 10,
-    separation: 70,
+    orbit: { type: 'pair', pericenter: 10, separation: 70 },
     cameraPitch: 40,
     cameraDistance: 130,
   },
@@ -386,8 +443,7 @@ export const SCENARIOS: Scenario[] = [
       { spec: MILKY_WAY_LIKE, inclination: 0, argument: 0 },
       { spec: companion(0.3), inclination: 30, argument: 0 },
     ],
-    pericenter: 14,
-    separation: 55,
+    orbit: { type: 'pair', pericenter: 14, separation: 55 },
     cameraPitch: 80,
     cameraDistance: 90,
   },
@@ -403,12 +459,90 @@ export const SCENARIOS: Scenario[] = [
       { spec: MILKY_WAY_LIKE, inclination: 90, argument: 80 },
       { spec: companion(0.35, true), inclination: 0, argument: 0 },
     ],
-    pericenter: 0,
-    separation: 45,
+    orbit: { type: 'pair', pericenter: 0, separation: 45 },
     cameraPitch: 35,
     cameraDistance: 90,
   },
+  {
+    id: 'triple',
+    title: { ja: '三つ巴', en: 'Triple' },
+    description: {
+      ja: '同じ重さの 3 つの渦巻銀河が回りながら引き寄せ合い、次々にぶつかって 1 つになる',
+      en: 'Three equal spirals swirl inward, collide one after another, and end as a single galaxy',
+    },
+    galaxies: [
+      { spec: MILKY_WAY_LIKE, inclination: 20, argument: 0, position: [48, 0, 4] },
+      { spec: MILKY_WAY_LIKE, inclination: 75, argument: 40, position: [-26, 44, -6] },
+      { spec: MILKY_WAY_LIKE, inclination: 130, argument: 110, position: [-22, -40, 3] },
+    ],
+    orbit: { type: 'group', virial: 0.3, spin: 0.6 },
+    cameraPitch: 55,
+    cameraDistance: 170,
+  },
+  {
+    id: 'satellites',
+    title: { ja: '2 つの伴銀河', en: 'Two satellites' },
+    description: {
+      ja: '大きな銀河のまわりを大小 2 つの伴銀河が回り、少しずつ引き裂かれて呑み込まれていく',
+      en: 'Two small satellites orbit a large spiral and are slowly torn apart and swallowed',
+    },
+    galaxies: [
+      { spec: MILKY_WAY_LIKE, inclination: 0, argument: 0, position: [0, 0, 0] },
+      { spec: companion(0.2), inclination: 40, argument: 0, position: [38, 0, 6] },
+      { spec: companion(0.12), inclination: 100, argument: 60, position: [-20, -45, -12] },
+    ],
+    orbit: { type: 'group', virial: 0.4, spin: 0.9 },
+    cameraPitch: 60,
+    cameraDistance: 140,
+  },
+  {
+    id: 'compact-group',
+    title: { ja: 'コンパクト銀河群', en: 'Compact group' },
+    description: {
+      ja: '大きさも向きもばらばらな 4 つの銀河が狭い空間に集まり、尾を絡ませながら巨大な楕円銀河へ',
+      en: 'Four galaxies of mixed sizes and tilts crowd together, tangle their tails, and build a giant elliptical',
+    },
+    galaxies: [
+      { spec: MILKY_WAY_LIKE, inclination: 30, argument: 0, position: [-18, -8, 4] },
+      { spec: companion(0.6), inclination: 110, argument: 50, position: [34, -18, -10] },
+      { spec: companion(0.4), inclination: 60, argument: 150, position: [6, 36, 12] },
+      { spec: companion(0.25), inclination: 160, argument: 250, position: [-14, 10, -34] },
+    ],
+    orbit: { type: 'group', virial: 0.35, spin: 0.4 },
+    cameraPitch: 45,
+    cameraDistance: 160,
+  },
+  {
+    id: 'pinwheel',
+    title: { ja: '風車', en: 'Pinwheel' },
+    description: {
+      ja: '同じ重さの 4 つの渦巻銀河が風車のように回りながら落ち込み、中心で一斉にぶつかる',
+      en: 'Four equal spirals swirl in like a pinwheel and crash together at the center',
+    },
+    galaxies: [
+      { spec: MILKY_WAY_LIKE, inclination: 15, argument: 0, position: [44, 0, 0] },
+      { spec: MILKY_WAY_LIKE, inclination: 50, argument: 90, position: [0, 48, 5] },
+      { spec: MILKY_WAY_LIKE, inclination: 25, argument: 180, position: [-42, 0, -4] },
+      { spec: MILKY_WAY_LIKE, inclination: 70, argument: 270, position: [0, -46, 2] },
+    ],
+    orbit: { type: 'group', virial: 0.25, spin: 0.55 },
+    cameraPitch: 70,
+    cameraDistance: 170,
+  },
 ];
+
+/** 各銀河の重心の位置と速度 */
+export function galaxyOrbits(scenario: Scenario): { pos: number[][]; vel: number[][] } {
+  const masses = scenario.galaxies.map((g) => totalMass(g.spec));
+  const { orbit } = scenario;
+  if (orbit.type === 'pair') {
+    if (masses.length !== 2) throw new Error(`${scenario.id}: pair orbit needs 2 galaxies`);
+    const o = parabolicOrbit(masses[0]!, masses[1]!, orbit.pericenter, orbit.separation);
+    return { pos: [o.pos1, o.pos2], vel: [o.vel1, o.vel2] };
+  }
+  const positions = scenario.galaxies.map((g) => g.position ?? [0, 0, 0]);
+  return groupOrbits(masses, positions, orbit.virial, orbit.spin);
+}
 
 /**
  * シナリオの全粒子を生成する。粒子の質量は「星（円盤・バルジ）」と「ハロー」の 2 種類にそろえ、
@@ -421,36 +555,31 @@ export function buildScenario(
   rng: Rng,
   haloShare = 0.4,
 ): Particles {
-  const [a, b] = scenario.galaxies;
+  const specs = scenario.galaxies.map((g) => g.spec);
   const starMass = (s: GalaxySpec) => (s.disk?.mass ?? 0) + (s.bulge?.mass ?? 0);
-  const stars = starMass(a.spec) + starMass(b.spec);
-  const halos = a.spec.halo.mass + b.spec.halo.mass;
+  const stars = specs.reduce((a, s) => a + starMass(s), 0);
+  const halos = specs.reduce((a, s) => a + s.halo.mass, 0);
   const nHalo = Math.round(n * haloShare);
   const nStar = n - nHalo;
 
-  const countsFor = (s: GalaxySpec) => ({
+  const counts = specs.map((s) => ({
     disk: Math.round((nStar * (s.disk?.mass ?? 0)) / stars),
     bulge: Math.round((nStar * (s.bulge?.mass ?? 0)) / stars),
     halo: Math.round((nHalo * s.halo.mass) / halos),
-  });
-  const c1 = countsFor(a.spec);
-  const c2 = countsFor(b.spec);
-  // 丸め誤差は主銀河のハローで吸収して、合計をちょうど n にする
-  c1.halo += n - (c1.disk + c1.bulge + c1.halo + c2.disk + c2.bulge + c2.halo);
+  }));
+  // 丸め誤差は最初の銀河のハローで吸収して、合計をちょうど n にする
+  const assigned = counts.reduce((a, c) => a + c.disk + c.bulge + c.halo, 0);
+  counts[0]!.halo += n - assigned;
 
   const out: Particles = { pos: new Float32Array(n * 4), vel: new Float32Array(n * 4), count: n };
-  const m1 = totalMass(a.spec);
-  const m2 = totalMass(b.spec);
-  const orbit = parabolicOrbit(m1, m2, scenario.pericenter, scenario.separation);
+  const orbits = galaxyOrbits(scenario);
 
   let offset = 0;
-  const placements: [GalaxyPlacement, typeof c1, number[], number[]][] = [
-    [a, c1, orbit.pos1, orbit.vel1],
-    [b, c2, orbit.pos2, orbit.vel2],
-  ];
-  placements.forEach(([g, counts, p, v], gi) => {
+  scenario.galaxies.forEach((g, gi) => {
+    const p = orbits.pos[gi]!;
+    const v = orbits.vel[gi]!;
     const start = offset;
-    offset += sampleGalaxy(g.spec, counts, gi, eps, rng, out, offset);
+    offset += sampleGalaxy(g.spec, counts[gi]!, gi, eps, rng, out, offset);
     const rotate = orientation(g.inclination, g.argument);
     recenter(out, start, offset);
     for (let i = start; i < offset; i++) {
