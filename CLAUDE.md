@@ -12,8 +12,8 @@
   見た目に関わる変更をしたら撮って画像を確認すること。
 - `npm run timeline -- <sim-id> "<query>" <ステップ,ステップ,…>` — 1 回の実行の途中経過を
   `shots/<sim-id>-<ステップ>.png` として連続で撮る（時間発展を確かめる用）
-- `npm run verify:gpu` — 銀河衝突の GPU 計算が CPU 版（ユニットテスト済み）と一致するかをブラウザで確認。
-  `src/sims/galaxy/shaders.ts` や `gpu-nbody.ts` を変えたら必ず実行する
+- `npm run verify:gpu` — 銀河衝突と三重振り子の GPU 計算が CPU 版（ユニットテスト済み）と一致するかをブラウザで確認。
+  `src/sims/galaxy/`・`src/sims/pendulum/` のシェーダや GPU のコードを変えたら必ず実行する
 
 スクリーンショット系のスクリプトはヘッドレス Chromium の WebGPU（SwiftShader、CPU で動くので遅い）を使う。
 銀河衝突は `n=2048`〜`4096` 程度にしないと終わらない。
@@ -37,6 +37,9 @@
   - `gpu-nbody.ts` — GPU バッファとパイプライン、エネルギーの読み出し
   - URL クエリ: `scenario`, `n`, `dm=1`, `cpu=1`, `substeps`（固定するとステップ数が決定的になる）,
     `yaw` / `pitch` / `dist`（カメラ、度と kpc）, `rotate=0`（自動回転を止める）
+- `src/sims/pendulum/` — 三重振り子とカオス
+  - `physics.ts` — ラグランジュ方程式と RK4（倍精度）。テストと、画面の「予測の限界」の基準
+  - `shaders.ts` / `gpu-pendulums.ts` — 同じ式の WGSL 版。何万本を同時に積分し、線の残像か一回転の地図で描く
 - `src/sims/forest/` — 森の一生
   - `stand.ts` — 林分の個体ベースモデル（光・成長・枯死・種子散布・台風・山火事）。DOM に依存しない
   - `render.ts` — 遠近法での描画（奥から手前へ、空気遠近法、季節）
