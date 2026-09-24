@@ -1,4 +1,5 @@
 import { initWebGPU } from '../../core/gpu';
+import { LANG_CHANGE, lang, t, type Text } from '../../core/i18n';
 import { transformPoint } from '../../core/mat4';
 import type { SimDefinition, SimInstance } from '../../core/sim';
 import { OrbitCamera } from './camera';
@@ -20,9 +21,11 @@ const softeningFor = (n: number) => 0.25 * Math.cbrt(16384 / n);
 
 export const galaxy: SimDefinition = {
   id: 'galaxy',
-  title: '銀河衝突',
-  description:
-    '2 つの渦巻銀河の衝突を、星とダークマター全粒子の重力を直接計算する N 体シミュレーションで再現。',
+  title: { ja: '銀河衝突', en: 'Galaxy Collision' },
+  description: {
+    ja: '2 つの渦巻銀河の衝突を、星とダークマター全粒子の重力を直接計算する N 体シミュレーションで再現。',
+    en: 'Two spiral galaxies collide in an N-body simulation that computes the gravity between every star and dark matter particle directly.',
+  },
   dt: 1 / 60,
   async create({ canvas, width, height, dpr, rng, params }) {
     const scenario = SCENARIOS.find((s) => s.id === params.get('scenario')) ?? SCENARIOS[0]!;
@@ -52,12 +55,16 @@ export const galaxy: SimDefinition = {
       n,
       counts,
       showDarkMatter,
-      mode: gpu ? (slowGpu ? 'WebGPU（ソフトウェア）' : 'WebGPU') : 'CPU（WebGPU 非対応）',
+      mode: gpu
+        ? slowGpu
+          ? { ja: 'WebGPU（ソフトウェア）', en: 'WebGPU (software)' }
+          : { ja: 'WebGPU', en: 'WebGPU' }
+        : { ja: 'CPU（WebGPU 非対応）', en: 'CPU (no WebGPU)' },
       onDarkMatter: (v) => (showDarkMatter = v),
     });
 
     /** パネルの高さの半分だけ、描画の中心を上へずらす */
-    const panelOffset = () => (h > 0 ? panel.offsetHeight / h : 0);
+    const panelOffset = () => (h > 0 ? panel.el.offsetHeight / h : 0);
 
     const common = {
       resize(nw: number, nh: number, ndpr: number) {
@@ -73,10 +80,16 @@ export const galaxy: SimDefinition = {
     let energy0: number | null = null;
     let energyError: number | null = null;
     const baseStats = (steps: number) => ({
-      粒子: n.toLocaleString(),
-      経過: `${Math.round(steps * DT * UNIT_TIME_MYR).toLocaleString()} 百万年`,
-      '重力計算/秒': formatBig(stepsPerSecond * n * n),
-      エネルギー誤差: energyError === null ? '計測中' : `${(energyError * 100).toPrecision(2)}%`,
+      [t({ ja: '粒子', en: 'Particles' })]: n.toLocaleString(),
+      [t({ ja: '経過', en: 'Time' })]: t({
+        ja: `${Math.round(steps * DT * UNIT_TIME_MYR).toLocaleString()} 百万年`,
+        en: `${Math.round(steps * DT * UNIT_TIME_MYR).toLocaleString()} Myr`,
+      }),
+      [t({ ja: '重力計算/秒', en: 'Gravity pairs/s' })]: formatBig(stepsPerSecond * n * n),
+      [t({ ja: 'エネルギー誤差', en: 'Energy error' })]:
+        energyError === null
+          ? t({ ja: '計測中', en: 'measuring' })
+          : `${(energyError * 100).toPrecision(2)}%`,
     });
     const recordEnergy = (total: number) => {
       if (energy0 === null) energy0 = total;
@@ -150,7 +163,7 @@ export const galaxy: SimDefinition = {
         stats: () => baseStats(sim.steps),
         dispose() {
           camera.dispose();
-          panel.remove();
+          panel.dispose();
           sim.dispose();
         },
       };
@@ -159,7 +172,7 @@ export const galaxy: SimDefinition = {
 
     // ---- CPU フォールバック（Canvas2D） ----
     const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Canvas2D が使えません');
+    if (!ctx) throw new Error('Canvas2D is not available');
     const acc = new Float32Array(n * 4);
     const masses = particles.pos.filter((_, i) => i % 4 === 3);
     leapfrogStep(particles, eps, DT, acc, 0.5, 0);
@@ -193,7 +206,7 @@ export const galaxy: SimDefinition = {
       stats: () => baseStats(steps),
       dispose() {
         camera.dispose();
-        panel.remove();
+        panel.dispose();
       },
     };
   },
@@ -240,13 +253,19 @@ function drawCpu(
 }
 
 function formatBig(v: number): string {
+  if (lang() === 'en') {
+    if (v >= 1e12) return `${(v / 1e12).toFixed(2)} trillion`;
+    if (v >= 1e9) return `${(v / 1e9).toFixed(1)} billion`;
+    if (v >= 1e6) return `${(v / 1e6).toFixed(1)} million`;
+    return Math.round(v).toLocaleString('en');
+  }
   if (v >= 1e12) return `${(v / 1e12).toFixed(2)} 兆回`;
   if (v >= 1e8) return `${(v / 1e8).toFixed(1)} 億回`;
   if (v >= 1e4) return `${(v / 1e4).toFixed(0)} 万回`;
   return `${Math.round(v)} 回`;
 }
 
-/** 画面下のシナリオ・粒子数・表示切り替えパネル */
+/** 画面下のシナリオ・粒子数・表示切り替えパネル。言語が変わったら文言だけ描き直す */
 function mountPanel(
   root: HTMLElement,
   opts: {
@@ -254,33 +273,17 @@ function mountPanel(
     n: number;
     counts: number[];
     showDarkMatter: boolean;
-    mode: string;
+    mode: Text;
     onDarkMatter: (v: boolean) => void;
   },
-): HTMLElement {
+): { el: HTMLElement; dispose: () => void } {
   const panel = document.createElement('div');
   panel.className = 'galaxy-panel';
   const current = SCENARIOS.find((s) => s.id === opts.scenarioId)!;
   const counts = opts.counts.includes(opts.n)
     ? opts.counts
     : [...opts.counts, opts.n].sort((a, b) => a - b);
-  panel.innerHTML = `
-    <p class="galaxy-desc">${current.description}</p>
-    <div class="galaxy-row">
-      ${SCENARIOS.map(
-        (s) =>
-          `<button data-scenario="${s.id}" class="${s.id === current.id ? 'on' : ''}">${s.title}</button>`,
-      ).join('')}
-    </div>
-    <div class="galaxy-row">
-      <label>粒子数
-        <select data-n>
-          ${counts.map((c) => `<option value="${c}" ${c === opts.n ? 'selected' : ''}>${c.toLocaleString()}</option>`).join('')}
-        </select>
-      </label>
-      <label><input type="checkbox" data-dm ${opts.showDarkMatter ? 'checked' : ''}/> ダークマターを表示</label>
-      <span class="galaxy-mode">${opts.mode}</span>
-    </div>`;
+  let showDarkMatter = opts.showDarkMatter;
 
   const navigate = (changes: Record<string, string>) => {
     const q = new URLSearchParams(location.search);
@@ -288,17 +291,48 @@ function mountPanel(
     history.replaceState(null, '', `?${q}${location.hash}`);
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   };
-  panel
-    .querySelectorAll<HTMLButtonElement>('[data-scenario]')
-    .forEach((b) => b.addEventListener('click', () => navigate({ scenario: b.dataset.scenario! })));
-  panel
-    .querySelector<HTMLSelectElement>('[data-n]')!
-    .addEventListener('change', (e) => navigate({ n: (e.target as HTMLSelectElement).value }));
-  panel.querySelector<HTMLInputElement>('[data-dm]')!.addEventListener('change', (e) => {
-    opts.onDarkMatter((e.target as HTMLInputElement).checked);
-  });
+
+  const render = () => {
+    panel.innerHTML = `
+      <p class="galaxy-desc">${t(current.description)}</p>
+      <div class="galaxy-row">
+        ${SCENARIOS.map(
+          (s) =>
+            `<button data-scenario="${s.id}" class="${s.id === current.id ? 'on' : ''}">${t(s.title)}</button>`,
+        ).join('')}
+      </div>
+      <div class="galaxy-row">
+        <label>${t({ ja: '粒子数', en: 'Particles' })}
+          <select data-n>
+            ${counts.map((c) => `<option value="${c}" ${c === opts.n ? 'selected' : ''}>${c.toLocaleString()}</option>`).join('')}
+          </select>
+        </label>
+        <label><input type="checkbox" data-dm ${showDarkMatter ? 'checked' : ''}/> ${t({ ja: 'ダークマターを表示', en: 'Show dark matter' })}</label>
+        <span class="galaxy-mode">${t(opts.mode)}</span>
+      </div>`;
+    panel
+      .querySelectorAll<HTMLButtonElement>('[data-scenario]')
+      .forEach((b) =>
+        b.addEventListener('click', () => navigate({ scenario: b.dataset.scenario! })),
+      );
+    panel
+      .querySelector<HTMLSelectElement>('[data-n]')!
+      .addEventListener('change', (e) => navigate({ n: (e.target as HTMLSelectElement).value }));
+    panel.querySelector<HTMLInputElement>('[data-dm]')!.addEventListener('change', (e) => {
+      showDarkMatter = (e.target as HTMLInputElement).checked;
+      opts.onDarkMatter(showDarkMatter);
+    });
+  };
+  render();
+  window.addEventListener(LANG_CHANGE, render);
   // パネル上の操作でカメラが回らないように
   panel.addEventListener('pointerdown', (e) => e.stopPropagation());
   root.append(panel);
-  return panel;
+  return {
+    el: panel,
+    dispose: () => {
+      window.removeEventListener(LANG_CHANGE, render);
+      panel.remove();
+    },
+  };
 }

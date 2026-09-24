@@ -8,12 +8,15 @@ import type { SimDefinition } from '../../core/sim';
  */
 export const boids: SimDefinition = {
   id: 'boids',
-  title: 'Boids',
-  description: '分離・整列・結合の 3 規則だけで生まれる群れ。ドラッグで捕食者になる。',
+  title: { ja: 'Boids', en: 'Boids' },
+  description: {
+    ja: '分離・整列・結合の 3 規則だけで生まれる群れ。ドラッグで捕食者になる。',
+    en: 'A flock emerging from just three rules: separation, alignment, cohesion. Drag to become a predator.',
+  },
   dt: 1 / 60,
   create({ canvas, width, height, dpr, rng, params }) {
     const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Canvas2D が使えません');
+    if (!ctx) throw new Error('Canvas2D is not available');
 
     const n = Number(params.get('n') ?? 1500);
     const radius = 28;

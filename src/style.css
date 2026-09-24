@@ -156,3 +156,30 @@ body,
   color: var(--muted);
   font-size: 11px;
 }
+.lang-toggle {
+  position: absolute;
+  /* 左上の「← 一覧」の下。右上の HUD は狭い画面で横に広がるので避ける */
+  top: 44px;
+  left: 12px;
+  z-index: 1;
+  font:
+    12px ui-monospace,
+    monospace;
+  color: var(--fg);
+  background: rgb(0 0 0 / 0.45);
+  border: 1px solid #2a3350;
+  border-radius: 999px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.lang-toggle:hover {
+  border-color: var(--accent);
+}
+#app {
+  position: relative;
+}
+.gallery + .lang-toggle {
+  left: auto;
+  right: 16px;
+  top: 16px;
+}

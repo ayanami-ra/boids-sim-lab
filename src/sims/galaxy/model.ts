@@ -10,6 +10,7 @@
  * - ダークマターハロー: ヘルンキスト球（外側を打ち切り）。バルジと同様
  * どの粒子も質量を持ち、互いに重力を及ぼし合う（ハローも生きているので力学的摩擦で合体する）。
  */
+import type { Text } from '../../core/i18n';
 import type { Rng } from '../../core/rng';
 
 export const UNIT_TIME_MYR = 4.71;
@@ -324,8 +325,8 @@ export interface GalaxyPlacement {
 
 export interface Scenario {
   id: string;
-  title: string;
-  description: string;
+  title: Text;
+  description: Text;
   galaxies: [GalaxyPlacement, GalaxyPlacement];
   pericenter: number;
   separation: number;
@@ -344,8 +345,11 @@ const companion = (q: number, noDisk = false): GalaxySpec => {
 export const SCENARIOS: Scenario[] = [
   {
     id: 'antennae',
-    title: 'アンテナ',
-    description: '同じ重さの渦巻銀河が順行ですれ違い、長い潮汐の尾を 2 本引いて合体する',
+    title: { ja: 'アンテナ', en: 'Antennae' },
+    description: {
+      ja: '同じ重さの渦巻銀河が順行ですれ違い、長い潮汐の尾を 2 本引いて合体する',
+      en: 'Two equal spirals pass each other prograde, fling out two long tidal tails, and merge',
+    },
     galaxies: [
       { spec: MILKY_WAY_LIKE, inclination: 20, argument: 0 },
       { spec: MILKY_WAY_LIKE, inclination: 60, argument: 30 },
@@ -357,8 +361,11 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     id: 'mice',
-    title: 'ねずみ',
-    description: '片方は順行、片方は大きく傾いた出会い。尾の長さがはっきり違う',
+    title: { ja: 'ねずみ', en: 'Mice' },
+    description: {
+      ja: '片方は順行、片方は大きく傾いた出会い。尾の長さがはっきり違う',
+      en: 'One disk prograde, the other steeply tilted — their tails grow to very different lengths',
+    },
     galaxies: [
       { spec: MILKY_WAY_LIKE, inclination: 10, argument: 0 },
       { spec: MILKY_WAY_LIKE, inclination: 110, argument: 60 },
@@ -370,8 +377,11 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     id: 'whirlpool',
-    title: '子持ち銀河',
-    description: '小さな伴銀河の接近で、主銀河に大きな 2 本の渦巻腕が立ち上がる（M51 風）',
+    title: { ja: '子持ち銀河', en: 'Whirlpool' },
+    description: {
+      ja: '小さな伴銀河の接近で、主銀河に大きな 2 本の渦巻腕が立ち上がる（M51 風）',
+      en: 'A small companion swings by and raises two grand spiral arms in the main galaxy (like M51)',
+    },
     galaxies: [
       { spec: MILKY_WAY_LIKE, inclination: 0, argument: 0 },
       { spec: companion(0.3), inclination: 30, argument: 0 },
@@ -383,8 +393,11 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     id: 'cartwheel',
-    title: '車輪',
-    description: '小さな銀河が円盤の中心を垂直に突き抜け、波紋のようなリングが広がる',
+    title: { ja: '車輪', en: 'Cartwheel' },
+    description: {
+      ja: '小さな銀河が円盤の中心を垂直に突き抜け、波紋のようなリングが広がる',
+      en: 'A small galaxy plunges straight through the disk center, sending out a ripple-like ring',
+    },
     galaxies: [
       // 自転軸を x 軸（衝突の向き）から少しだけ傾け、リングを少し非対称にする
       { spec: MILKY_WAY_LIKE, inclination: 90, argument: 80 },
