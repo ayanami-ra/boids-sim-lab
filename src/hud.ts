@@ -1,3 +1,4 @@
+import { t } from './core/i18n';
 import type { RunnerHandle } from './core/runner';
 
 /** FPS・ステップ情報の表示とキーボード操作 */
@@ -17,9 +18,10 @@ export function mountHud(root: HTMLElement, runner: RunnerHandle): () => void {
       frames = 0;
       lastSample = now;
       const lines = Object.entries(runner.instance.stats?.() ?? {}).map(([k, v]) => `${k} ${v}`);
-      el.textContent = [`${fps.toFixed(0)} fps${runner.paused ? ' · 停止中' : ''}`, ...lines].join(
-        '\n',
-      );
+      el.textContent = [
+        `${fps.toFixed(0)} fps${runner.paused ? ` · ${t({ ja: '停止中', en: 'paused' })}` : ''}`,
+        ...lines,
+      ].join('\n');
     }
     raf = requestAnimationFrame(update);
   };

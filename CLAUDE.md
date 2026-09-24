@@ -26,6 +26,7 @@
   - `rng.ts` — シード付き乱数。**`Math.random()` は使わず `ctx.rng` を使う**（再現性のため）
   - `spatial-hash.ts` — 近傍探索用グリッド
   - `gpu.ts` — WebGPU 初期化（非対応なら `null`）
+  - `i18n.ts` — 日本語 / 英語の切り替え。URL の `?lang=en` → 保存済みの設定 → ブラウザの言語設定の順で決まる
 - `src/sims/<id>/index.ts` — シミュレーション 1 本。`src/registry.ts` に登録するとギャラリーに出る
 - `src/sims/boids/` — 参照実装。新しいシミュレーションはこれを雛形にする
 - `src/sims/galaxy/` — 銀河衝突の N 体シミュレーション（WebGPU、非対応なら CPU + Canvas2D）
@@ -46,4 +47,7 @@
 - `navigator.gpu.requestAdapter()` を 2 回呼ばない（Chrome で最初の device が失われる）。アダプタ情報は
   `initWebGPU()` の返り値の `adapter` を使う
 - 座標は CSS px。canvas の実解像度は `width * dpr`
-- UI 文言・コメントは日本語
+- 画面に出す文言は日本語と英語の両方を `{ ja, en }`（`Text` 型）で書き、`t()` で表示する（`src/core/i18n.ts`）。
+  言語が切り替わると `langchange` イベントが出るので、固定の文言を持つ DOM はそれを受けて描き直す
+  （シミュレーションは止めない）。`stats()` は呼ばれるたびに `t()` を通すので対応不要
+- コメントは日本語

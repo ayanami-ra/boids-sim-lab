@@ -1,3 +1,4 @@
+import type { Text } from './i18n';
 import type { Rng } from './rng';
 
 /** シミュレーションが受け取る実行環境 */
@@ -22,6 +23,7 @@ export interface SimInstance {
   /** ポインタ操作（キャンバス座標、CSS px） */
   pointer?(e: { x: number; y: number; down: boolean; type: 'down' | 'move' | 'up' }): void;
   /** HUD に出す追加情報 */
+  /** HUD に出す追加情報（表示中の言語で返す） */
   stats?(): Record<string, string | number>;
   dispose?(): void;
 }
@@ -29,8 +31,8 @@ export interface SimInstance {
 /** ギャラリーに並ぶシミュレーションの定義 */
 export interface SimDefinition {
   id: string;
-  title: string;
-  description: string;
+  title: Text;
+  description: Text;
   /** 物理の固定 dt（秒）。省略時 1/120 */
   dt?: number;
   create(ctx: SimContext): SimInstance | Promise<SimInstance>;
