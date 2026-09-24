@@ -1,0 +1,89 @@
+:root {
+  color-scheme: dark;
+  --bg: #080a10;
+  --fg: #e6e9f2;
+  --muted: #8a93a8;
+  --accent: #7cc4ff;
+  font-family: system-ui, 'Hiragino Sans', 'Yu Gothic', sans-serif;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+}
+.gallery {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 48px 16px;
+}
+.gallery h1 {
+  margin: 0 0 4px;
+}
+.lead {
+  color: var(--muted);
+  margin: 0 0 32px;
+}
+.gallery ul {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.gallery a {
+  display: grid;
+  gap: 4px;
+  padding: 16px;
+  border: 1px solid #222838;
+  border-radius: 12px;
+  color: inherit;
+  text-decoration: none;
+}
+.gallery a:hover {
+  border-color: var(--accent);
+}
+.gallery span {
+  color: var(--muted);
+  font-size: 14px;
+}
+.stage {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+}
+.stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+.hud,
+.back,
+.help {
+  position: absolute;
+  font:
+    12px ui-monospace,
+    monospace;
+  color: var(--muted);
+  background: rgb(0 0 0 / 0.45);
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.hud {
+  top: 12px;
+  right: 12px;
+}
+.back {
+  top: 12px;
+  left: 12px;
+  text-decoration: none;
+}
+.help {
+  bottom: 12px;
+  left: 12px;
+}

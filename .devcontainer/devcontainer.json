@@ -1,0 +1,16 @@
+{
+  "name": "boids-sim-lab",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:22",
+  "forwardPorts": [5173],
+  "postCreateCommand": "npm install",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "vitest.explorer",
+        "PolyMeilex.wgsl"
+      ]
+    }
+  }
+}
