@@ -122,7 +122,10 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VOut 
   if (component == 0u) {
     // 円盤: 若い星の青白い光。ところどころに明るい星形成領域
     color = mix(vec3f(0.55, 0.7, 1.0), vec3f(1.0, 0.95, 0.9), r * 0.6);
+    // 銀河ごとにほんの少し色味を変えて、混ざり合っても見分けがつくようにする
     if (galaxy == 1u) { color = mix(color, vec3f(0.75, 0.85, 1.0), 0.5); }
+    if (galaxy == 2u) { color = mix(color, vec3f(1.0, 0.9, 0.75), 0.35); }
+    if (galaxy == 3u) { color = mix(color, vec3f(0.7, 1.0, 0.95), 0.35); }
     if (r > 0.97) { color = vec3f(1.0, 0.55, 0.75); intensity = 2.0; }
   } else if (component == 1u) {
     // バルジ: 年老いた星の黄色っぽい光

@@ -265,6 +265,9 @@ function formatBig(v: number): string {
   return `${Math.round(v)} 回`;
 }
 
+/** シナリオに登場する銀河の数の一覧（2, 3, 4） */
+const GALAXY_COUNTS = [...new Set(SCENARIOS.map((s) => s.galaxies.length))].sort((a, b) => a - b);
+
 /** 画面下のシナリオ・粒子数・表示切り替えパネル。言語が変わったら文言だけ描き直す */
 function mountPanel(
   root: HTMLElement,
@@ -284,6 +287,7 @@ function mountPanel(
     ? opts.counts
     : [...opts.counts, opts.n].sort((a, b) => a - b);
   let showDarkMatter = opts.showDarkMatter;
+  const count = current.galaxies.length;
 
   const navigate = (changes: Record<string, string>) => {
     const q = new URLSearchParams(location.search);
@@ -295,11 +299,19 @@ function mountPanel(
   const render = () => {
     panel.innerHTML = `
       <p class="galaxy-desc">${t(current.description)}</p>
-      <div class="galaxy-row">
-        ${SCENARIOS.map(
-          (s) =>
-            `<button data-scenario="${s.id}" class="${s.id === current.id ? 'on' : ''}">${t(s.title)}</button>`,
+      <div class="galaxy-row galaxy-count">
+        ${GALAXY_COUNTS.map(
+          (k) =>
+            `<button data-count="${k}" class="${k === count ? 'on' : ''}">${t({ ja: `銀河 ${k} つ`, en: `${k} galaxies` })}</button>`,
         ).join('')}
+      </div>
+      <div class="galaxy-row">
+        ${SCENARIOS.filter((s) => s.galaxies.length === count)
+          .map(
+            (s) =>
+              `<button data-scenario="${s.id}" class="${s.id === current.id ? 'on' : ''}">${t(s.title)}</button>`,
+          )
+          .join('')}
       </div>
       <div class="galaxy-row">
         <label>${t({ ja: '粒子数', en: 'Particles' })}
@@ -310,6 +322,14 @@ function mountPanel(
         <label><input type="checkbox" data-dm ${showDarkMatter ? 'checked' : ''}/> ${t({ ja: 'ダークマターを表示', en: 'Show dark matter' })}</label>
         <span class="galaxy-mode">${t(opts.mode)}</span>
       </div>`;
+    // 銀河の数を選ぶと、その数のシナリオの先頭に切り替える
+    panel.querySelectorAll<HTMLButtonElement>('[data-count]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const k = Number(b.dataset.count);
+        if (k === count) return;
+        navigate({ scenario: SCENARIOS.find((s) => s.galaxies.length === k)!.id });
+      }),
+    );
     panel
       .querySelectorAll<HTMLButtonElement>('[data-scenario]')
       .forEach((b) =>

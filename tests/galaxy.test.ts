@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createRng } from '../src/core/rng';
 import {
+  MAX_GALAXIES,
   MILKY_WAY_LIKE,
   SCENARIOS,
+  galaxyOrbits,
+  groupOrbits,
   buildScenario,
   circularVelocity2,
   parabolicOrbit,
@@ -81,6 +84,66 @@ describe('放物線軌道', () => {
   });
 });
 
+describe('銀河群の初期配置', () => {
+  const masses = [3, 2, 1];
+  const positions = [
+    [40, 0, 0],
+    [-20, 30, 5],
+    [0, -35, -5],
+  ];
+
+  it('重心は原点に静止し、運動エネルギー = |位置エネルギー| × virial', () => {
+    const { pos, vel } = groupOrbits(masses, positions, 0.3, 0.6);
+    for (let d = 0; d < 3; d++) {
+      expect(masses.reduce((s, m, i) => s + m * pos[i]![d]!, 0)).toBeCloseTo(0);
+      expect(masses.reduce((s, m, i) => s + m * vel[i]![d]!, 0)).toBeCloseTo(0);
+    }
+    let potential = 0;
+    for (let i = 0; i < 3; i++)
+      for (let j = i + 1; j < 3; j++)
+        potential -=
+          (masses[i]! * masses[j]!) / Math.hypot(...pos[i]!.map((v, d) => v - pos[j]![d]!));
+    const kinetic = masses.reduce((s, m, i) => s + 0.5 * m * Math.hypot(...vel[i]!) ** 2, 0);
+    expect(kinetic / -potential).toBeCloseTo(0.3);
+  });
+
+  it('spin = 1 なら z 軸まわりに回り、spin = 0 なら中心へ向かう', () => {
+    const angularMomentumZ = (spin: number) => {
+      const { pos, vel } = groupOrbits(masses, positions, 0.3, spin);
+      return masses.reduce(
+        (s, m, i) => s + m * (pos[i]![0]! * vel[i]![1]! - pos[i]![1]! * vel[i]![0]!),
+        0,
+      );
+    };
+    expect(angularMomentumZ(1)).toBeGreaterThan(0);
+    expect(Math.abs(angularMomentumZ(0))).toBeLessThan(1e-9 + Math.abs(angularMomentumZ(1)) * 0.2);
+  });
+});
+
+describe('シナリオ', () => {
+  it('銀河は 2〜MAX_GALAXIES 個で、3 個と 4 個のシナリオもある', () => {
+    for (const s of SCENARIOS) {
+      expect(s.galaxies.length).toBeGreaterThanOrEqual(2);
+      expect(s.galaxies.length).toBeLessThanOrEqual(MAX_GALAXIES);
+    }
+    expect(SCENARIOS.some((s) => s.galaxies.length === 3)).toBe(true);
+    expect(SCENARIOS.some((s) => s.galaxies.length === 4)).toBe(true);
+  });
+
+  it('銀河どうしは初期位置で重なりすぎていない（円盤 3 つ分以上離れている）', () => {
+    for (const s of SCENARIOS) {
+      const { pos } = galaxyOrbits(s);
+      for (let i = 0; i < pos.length; i++)
+        for (let j = i + 1; j < pos.length; j++)
+          expect(Math.hypot(...pos[i]!.map((v, d) => v - pos[j]![d]!))).toBeGreaterThan(20);
+    }
+  });
+
+  it('ID は重複しない', () => {
+    expect(new Set(SCENARIOS.map((s) => s.id)).size).toBe(SCENARIOS.length);
+  });
+});
+
 describe('リープフロッグ積分', () => {
   it('ケプラー運動を 20 周してもエネルギー誤差は 0.1% 未満', () => {
     // 円軌道の少しずれた楕円軌道
@@ -143,7 +206,7 @@ describe('銀河モデル', () => {
       expect(m.length).toBe(n);
       expect(m.every((x) => x > 0)).toBe(true);
       const total = m.reduce((a, b) => a + b, 0);
-      const expected = totalMass(scenario.galaxies[0].spec) + totalMass(scenario.galaxies[1].spec);
+      const expected = scenario.galaxies.reduce((a, g) => a + totalMass(g.spec), 0);
       expect(total / expected).toBeCloseTo(1, 4);
 
       const momentum = [0, 0, 0];
