@@ -1,7 +1,7 @@
 import { t, type Text } from '../../core/i18n';
 import { mountPanel } from '../../core/panel';
 import type { SimDefinition } from '../../core/sim';
-import { Discharge, type Mode } from './dbm';
+import { Cell, Discharge, type Mode } from './dbm';
 
 /** 枝分かれの選択肢（η）。大きいほど枝が少なくまっすぐ */
 const ETAS: { eta: number; label: Text }[] = [
@@ -9,6 +9,26 @@ const ETAS: { eta: number; label: Text }[] = [
   { eta: 2, label: { ja: 'ふつう', en: 'Some' } },
   { eta: 4, label: { ja: '少ない', en: 'Few' } },
 ];
+
+interface Bolt {
+  /** 地面に届いてからの秒数（まだなら -1） */
+  afterStrike: number;
+  /** 光の強さ（0〜1） */
+  flash: number;
+  /** 起点の列（格子のセル） */
+  x: number;
+}
+
+/** 雷が生まれる平均の頻度（1 秒あたり） */
+const FREQUENCIES: { rate: number; label: Text }[] = [
+  { rate: 0.25, label: { ja: '少ない', en: 'Rare' } },
+  { rate: 0.7, label: { ja: 'ふつう', en: 'Normal' } },
+  { rate: 1.8, label: { ja: '激しい', en: 'Intense' } },
+];
+/** 同時に伸ばす雷の最大数 */
+const MAX_GROWING = 5;
+/** 地面に届いてから光り直すまでの時刻（秒） */
+const PULSES = [0, 0.12, 0.3];
 
 const MODES: { mode: Mode; label: Text; hint: Text }[] = [
   {
@@ -66,9 +86,11 @@ export const lightning: SimDefinition = {
     let mode: Mode = params.get('mode') === 'lichtenberg' ? 'lichtenberg' : 'lightning';
     let eta = Number(params.get('eta')) || (mode === 'lightning' ? 2 : 1);
     let strikes = 0;
-    /** 落雷の後の光の強さ（0〜1）と経過時間 */
-    let flash = 0;
-    let afterStrike = -1;
+    let frequency = Math.max(0, Math.min(2, Number(params.get('freq') ?? 1)));
+    /** 伸びている・光っている雷（リーダーの番号 → 状態） */
+    const bolts = new Map<number, Bolt>();
+    /** 次の雷が生まれるまでの秒数 */
+    let nextSpawn = 0;
     let time = 0;
     const rain = Array.from({ length: 160 }, () => ({
       x: rng.next(),
@@ -87,7 +109,15 @@ export const lightning: SimDefinition = {
           <label>${t({ ja: '枝分かれ', en: 'Branching' })}</label>
           ${ETAS.map((e) => `<button data-eta="${e.eta}" class="${e.eta === eta ? 'on' : ''}">${t(e.label)} (η=${e.eta})</button>`).join('')}
           ${mode === 'lightning' ? `<button data-clear>${t({ ja: '避雷針を片付ける', en: 'Remove rods' })}</button>` : ''}
-        </div>`,
+        </div>
+        ${
+          mode === 'lightning'
+            ? `<div class="sim-row">
+                <label>${t({ ja: '雷の頻度', en: 'Frequency' })}</label>
+                ${FREQUENCIES.map((f, i) => `<button data-frequency="${i}" class="${i === frequency ? 'on' : ''}">${t(f.label)}</button>`).join('')}
+              </div>`
+            : ''
+        }`,
       (el) => {
         el.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) =>
           b.addEventListener('click', () => {
@@ -102,6 +132,13 @@ export const lightning: SimDefinition = {
         el.querySelectorAll<HTMLButtonElement>('[data-eta]').forEach((b) =>
           b.addEventListener('click', () => {
             eta = Number(b.dataset.eta);
+            panel.refresh();
+          }),
+        );
+        el.querySelectorAll<HTMLButtonElement>('[data-frequency]').forEach((b) =>
+          b.addEventListener('click', () => {
+            frequency = Number(b.dataset.frequency);
+            nextSpawn = Math.min(nextSpawn, spawnInterval());
             panel.refresh();
           }),
         );
@@ -185,21 +222,43 @@ export const lightning: SimDefinition = {
       }
     }
 
-    /** 放電路を消して、新しい放電を始める */
+    /** 放電路をすべて消す。雷モードは最初の 1 本をすぐに生み、リヒテンベルク図形は中心から始める */
     function startDischarge(world: World) {
       const d = new Discharge(world.gw, world.gh, world.mode);
       if (world.mode === 'lightning') applyGround(world, d);
       if (world.basePhi) d.phi.set(world.basePhi);
+      world.discharge = d;
+      bolts.clear();
       if (world.mode === 'lightning') {
-        d.seed(Math.round(world.gw * rng.range(0.15, 0.85)), Math.round(world.gh * 0.06));
+        spawnBolt(world);
+        nextSpawn = spawnInterval();
       } else {
         const c = (world.gw - 1) / 2;
         const o = world.origin ?? { x: c, y: c };
-        d.seed(Math.round(o.x), Math.round(o.y));
+        bolts.set(d.seed(Math.round(o.x), Math.round(o.y)), { afterStrike: -1, flash: 0, x: o.x });
       }
-      world.discharge = d;
-      afterStrike = -1;
-      flash = 0;
+    }
+
+    /** 雷の発生はランダム（ポアソン過程）: 次までの間隔は指数分布 */
+    function spawnInterval() {
+      return -Math.log(1 - rng.next()) / FREQUENCIES[frequency]!.rate;
+    }
+
+    /** 雲の底のランダムな位置から、新しい雷（先駆放電）を始める */
+    function spawnBolt(world: World) {
+      const d = world.discharge;
+      const growing = [...bolts.values()].filter((b) => b.afterStrike < 0).length;
+      if (growing >= MAX_GROWING) return;
+      // 伸びている雷の起点のすぐ隣は避ける
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const x = Math.round(world.gw * rng.range(0.08, 0.92));
+        const y = Math.round(world.gh * rng.range(0.04, 0.1));
+        const i = y * world.gw + x;
+        if (d.state[i] !== Cell.Free) continue;
+        if ([...bolts.values()].some((b) => b.afterStrike < 0 && Math.abs(b.x - x) < 6)) continue;
+        bolts.set(d.seed(x, y), { afterStrike: -1, flash: 0, x });
+        return;
+      }
     }
 
     let world = buildWorld();
@@ -217,23 +276,37 @@ export const lightning: SimDefinition = {
           if (r.x < 0) r.x += 1;
         }
         const d = world.discharge;
-        if (afterStrike >= 0) {
-          afterStrike += dt;
-          // 雷は 1 回で終わらず、同じ道を何度か光り直す（再帰雷撃）
-          const pulses = [0, 0.12, 0.3];
-          flash = Math.max(
-            0,
-            ...pulses.map((p) => (afterStrike >= p ? Math.exp(-(afterStrike - p) * 9) : 0)),
-          );
-          if (afterStrike > (world.mode === 'lightning' ? 1.6 : 3.5)) startDischarge(world);
-          return;
+        if (world.mode === 'lightning') {
+          nextSpawn -= dt;
+          if (nextSpawn <= 0) {
+            spawnBolt(world);
+            nextSpawn = spawnInterval();
+          }
         }
         const grows = world.mode === 'lightning' ? 3 : 8;
-        for (let k = 0; k < grows; k++) {
-          if (d.grow(eta, rng)) {
-            strikes++;
-            afterStrike = 0;
-            break;
+        for (const [id, bolt] of bolts) {
+          if (bolt.afterStrike >= 0) {
+            bolt.afterStrike += dt;
+            // 雷は 1 回で終わらず、同じ道を何度か光り直す（再帰雷撃）
+            const a = bolt.afterStrike;
+            bolt.flash = Math.max(0, ...PULSES.map((p) => (a >= p ? Math.exp(-(a - p) * 9) : 0)));
+            if (world.mode === 'lichtenberg') {
+              if (a > 3.5) {
+                startDischarge(world);
+                return;
+              }
+            } else if (a > 1.6) {
+              d.removeLeader(id, world.basePhi ?? undefined);
+              bolts.delete(id);
+            }
+            continue;
+          }
+          for (let k = 0; k < grows; k++) {
+            if (d.grow(eta, rng, id)) {
+              strikes++;
+              bolt.afterStrike = 0;
+              break;
+            }
           }
         }
         d.relax(1);
@@ -241,6 +314,7 @@ export const lightning: SimDefinition = {
 
       render() {
         ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        const flash = Math.max(0, ...[...bolts.values()].map((b) => b.flash));
         if (world.mode === 'lightning') drawStorm(ctx, world, w, h, flash, rain, time);
         else {
           ctx.fillStyle = '#04050b';
@@ -252,7 +326,7 @@ export const lightning: SimDefinition = {
           ctx.arc(world.ox + r, world.oy + r, r - world.cell, 0, Math.PI * 2);
           ctx.stroke();
         }
-        drawChannel(ctx, world, flash, afterStrike >= 0);
+        drawChannel(ctx, world, bolts);
       },
 
       resize(nw, nh, ndpr) {
@@ -290,6 +364,9 @@ export const lightning: SimDefinition = {
 
       stats: () => ({
         [t({ ja: '落雷', en: 'Strikes' })]: strikes,
+        [t({ ja: '伸びている雷', en: 'Growing' })]: [...bolts.values()].filter(
+          (b) => b.afterStrike < 0,
+        ).length,
         [t({ ja: '放電路', en: 'Channel' })]:
           `${world.discharge.length.toLocaleString()} ${t({ ja: 'セル', en: 'cells' })}`,
         [t({ ja: '電位の格子', en: 'Potential grid' })]: `${world.gw}×${world.gh}`,
@@ -369,51 +446,70 @@ function drawStorm(
   }
 }
 
-/** 放電路を描く。枝の先にぶら下がるセルが多い（電流が多い）ほど太く明るい */
-function drawChannel(ctx: CanvasRenderingContext2D, world: World, flash: number, struck: boolean) {
+/**
+ * 放電路を描く。枝の先にぶら下がるセルが多い（電流が多い）ほど太く明るい。
+ * 雷ごとに状態が違う（伸びている / 光っている / 消えかけ）ので、雷ごとにまとめて描く。
+ */
+function drawChannel(ctx: CanvasRenderingContext2D, world: World, bolts: Map<number, Bolt>) {
   const d = world.discharge;
   if (d.length < 2) return;
   const c = world.cell;
   const px = (i: number) => world.ox + (i % d.w) * c + c / 2;
   const py = (i: number) => world.oy + Math.floor(i / d.w) * c + c / 2;
   const sizes = d.subtreeSizes();
-  const maxLog = Math.log(1 + d.length);
+  const lichtenberg = world.mode === 'lichtenberg';
 
-  // 太さごとにまとめて描く（1 本ずつ stroke するより速い）
+  // 雷ごとのセル数（太さの基準）と、太さごとの線
   const buckets = 6;
-  const paths = Array.from({ length: buckets }, () => new Path2D());
-  for (let k = 1; k < d.length; k++) {
+  const perBolt = new Map<number, { count: number; paths: Path2D[] }>();
+  for (let k = 0; k < d.length; k++) {
+    const owner = d.owner[d.order[k]!]!;
+    let entry = perBolt.get(owner);
+    if (!entry)
+      perBolt.set(
+        owner,
+        (entry = { count: 0, paths: Array.from({ length: buckets }, () => new Path2D()) }),
+      );
+    entry.count++;
+  }
+  for (let k = 0; k < d.length; k++) {
     const i = d.order[k]!;
     const p = d.parent[i]!;
     if (p < 0) continue;
-    const level = Math.log(1 + sizes[i]!) / maxLog;
+    const entry = perBolt.get(d.owner[i]!)!;
+    const level = Math.log(1 + sizes[i]!) / Math.log(1 + entry.count);
     const b = Math.min(buckets - 1, Math.floor(level * buckets));
-    paths[b]!.moveTo(px(p), py(p));
-    paths[b]!.lineTo(px(i), py(i));
+    entry.paths[b]!.moveTo(px(p), py(p));
+    entry.paths[b]!.lineTo(px(i), py(i));
   }
 
-  const lichtenberg = world.mode === 'lichtenberg';
-  // 落雷後は枝がすぐ消え、主放電路だけが光る
-  const branchFade = struck && !lichtenberg ? Math.max(0, flash * 1.2 - 0.2) : 1;
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   ctx.lineCap = 'round';
-  for (let b = 0; b < buckets; b++) {
-    const level = (b + 1) / buckets;
-    const alpha = (0.15 + 0.85 * level) * branchFade;
-    if (alpha <= 0.01) continue;
-    const [r, g, bl] = lichtenberg ? [120 + 135 * level, 150 + 105 * level, 255] : [170, 160, 255];
-    ctx.strokeStyle = `rgba(${r}, ${g}, ${bl}, ${alpha * 0.18})`;
-    ctx.lineWidth = (0.6 + 2.2 * level) * 4;
-    ctx.stroke(paths[b]!);
-    ctx.strokeStyle = `rgba(${Math.min(255, r + 60)}, ${Math.min(255, g + 60)}, 255, ${alpha})`;
-    ctx.lineWidth = 0.6 + 2.2 * level;
-    ctx.stroke(paths[b]!);
-  }
-
-  if (struck && !lichtenberg) {
+  let screenFlash = 0;
+  for (const [id, entry] of perBolt) {
+    const bolt = bolts.get(id);
+    const struck = bolt ? bolt.afterStrike >= 0 : false;
+    const flash = bolt?.flash ?? 0;
+    // 落雷後は枝がすぐ消え、主放電路だけが光る
+    const branchFade = struck && !lichtenberg ? Math.max(0, flash * 1.2 - 0.2) : 1;
+    for (let b = 0; b < buckets; b++) {
+      const level = (b + 1) / buckets;
+      const alpha = (0.15 + 0.85 * level) * branchFade;
+      if (alpha <= 0.01) continue;
+      const [r, g, bl] = lichtenberg
+        ? [120 + 135 * level, 150 + 105 * level, 255]
+        : [170, 160, 255];
+      ctx.strokeStyle = `rgba(${r}, ${g}, ${bl}, ${alpha * 0.18})`;
+      ctx.lineWidth = (0.6 + 2.2 * level) * 4;
+      ctx.stroke(entry.paths[b]!);
+      ctx.strokeStyle = `rgba(${Math.min(255, r + 60)}, ${Math.min(255, g + 60)}, 255, ${alpha})`;
+      ctx.lineWidth = 0.6 + 2.2 * level;
+      ctx.stroke(entry.paths[b]!);
+    }
+    if (!struck || lichtenberg) continue;
     const main = new Path2D();
-    const path = d.mainPath();
+    const path = d.mainPath(id);
     for (let k = 0; k + 1 < path.length; k++) {
       main.moveTo(px(path[k]!), py(path[k]!));
       main.lineTo(px(path[k + 1]!), py(path[k + 1]!));
@@ -427,17 +523,25 @@ function drawChannel(ctx: CanvasRenderingContext2D, world: World, flash: number,
     ctx.strokeStyle = `rgba(255, 255, 255, ${Math.min(1, 0.4 + flash)})`;
     ctx.lineWidth = 2.2;
     ctx.stroke(main);
-    ctx.fillStyle = `rgba(200, 200, 255, ${0.18 * flash})`;
+    screenFlash = Math.max(screenFlash, flash);
+  }
+  if (screenFlash > 0) {
+    ctx.fillStyle = `rgba(200, 200, 255, ${0.18 * screenFlash})`;
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   }
   ctx.restore();
 
   // 伸びている先端をきらめかせる
-  if (!struck) {
-    ctx.fillStyle = 'rgba(230, 225, 255, 0.9)';
-    for (let k = Math.max(1, d.length - 6); k < d.length; k++) {
-      const i = d.order[k]!;
-      ctx.fillRect(px(i) - 1.5, py(i) - 1.5, 3, 3);
-    }
+  ctx.fillStyle = 'rgba(230, 225, 255, 0.9)';
+  const shown = new Map<number, number>();
+  for (let k = d.length - 1; k > 0; k--) {
+    const i = d.order[k]!;
+    const owner = d.owner[i]!;
+    const bolt = bolts.get(owner);
+    if (!bolt || bolt.afterStrike >= 0) continue;
+    const n = shown.get(owner) ?? 0;
+    if (n >= 5) continue;
+    shown.set(owner, n + 1);
+    ctx.fillRect(px(i) - 1.5, py(i) - 1.5, 3, 3);
   }
 }

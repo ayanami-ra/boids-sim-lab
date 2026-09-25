@@ -113,3 +113,70 @@ describe('放電の成長', () => {
     expect(sizes[15 + 40 * 0 + 30]).toBe(d.length);
   });
 });
+
+describe('複数の雷', () => {
+  function field() {
+    const d = new Discharge(60, 50, 'lightning');
+    d.relax(800);
+    return d;
+  }
+
+  it('2 本のリーダーを同時に伸ばすと、どちらも地面に届き、放電路は混ざらない', () => {
+    const d = field();
+    const a = d.seed(15, 1);
+    const b = d.seed(45, 1);
+    const rng = createRng('two');
+    for (let k = 0; k < 6000 && (d.struckCell(a) < 0 || d.struckCell(b) < 0); k++) {
+      d.grow(2, rng, a);
+      d.grow(2, rng, b);
+      d.relax(1);
+    }
+    expect(d.struckCell(a)).toBeGreaterThanOrEqual(0);
+    expect(d.struckCell(b)).toBeGreaterThanOrEqual(0);
+    for (let k = 0; k < d.length; k++) {
+      const i = d.order[k]!;
+      const p = d.parent[i]!;
+      if (p >= 0) expect(d.owner[p]).toBe(d.owner[i]);
+    }
+    expect(d.mainPath(a).every((i) => d.owner[i] === a)).toBe(true);
+    expect(d.mainPath(b).every((i) => d.owner[i] === b)).toBe(true);
+  });
+
+  it('光り終わった雷を片付けると、そのセルは空き、もう 1 本はそのまま残る', () => {
+    const d = field();
+    const base = d.phi.slice();
+    const a = d.seed(15, 1);
+    const b = d.seed(45, 1);
+    const rng = createRng('remove');
+    for (let k = 0; k < 40; k++) {
+      d.grow(2, rng, a);
+      d.grow(2, rng, b);
+    }
+    const bCells = [...d.order.subarray(0, d.length)].filter((i) => d.owner[i] === b);
+    d.removeLeader(a, base);
+    expect(d.leaderIds()).toEqual([b]);
+    expect(d.length).toBe(bCells.length);
+    for (let i = 0; i < d.state.length; i++) {
+      if (d.state[i] === Cell.Channel) expect(d.owner[i]).toBe(b);
+    }
+    // 残ったリーダーは伸び続けられる
+    const before = d.length;
+    d.grow(2, rng, b);
+    expect(d.length).toBe(before + 1);
+  });
+
+  it('リーダーは同じ電場を共有する: 放電路のそばは電位が下がり、他の雷が近寄りにくくなる', () => {
+    const empty = field();
+    const d = field();
+    const a = d.seed(30, 1);
+    const rng = createRng('shield');
+    for (let k = 0; k < 120; k++) d.grow(3, rng, a);
+    d.relax(300);
+    // 放電路の先端から横に 3 マスの電位は、何もない場より低い
+    const tip = d.order[d.length - 1]!;
+    const x = tip % 60;
+    const y = Math.floor(tip / 60);
+    const side = y * 60 + Math.min(59, x + 3);
+    expect(d.phi[side]!).toBeLessThan(empty.phi[side]! - 0.05);
+  });
+});
